@@ -53,7 +53,9 @@ def compute_discount_amount(rule: PromotionRule, base_price: Decimal) -> Decimal
         amount = Decimal(rule.discount_value)
     if rule.max_discount is not None:
         amount = min(amount, rule.max_discount)
-    return amount
+    # asyncpg can decode a scale-0 NUMERIC like 30000 as Decimal('3E+4'); quantizing
+    # to cents forces fixed-point formatting so the API never emits scientific notation.
+    return amount.quantize(Decimal("0.01"))
 
 
 def best_combination(

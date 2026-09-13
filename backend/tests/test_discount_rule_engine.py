@@ -79,6 +79,15 @@ def test_stack_group_keeps_only_the_larger_discount():
     assert applied[0].rule_id == 2
 
 
+def test_max_discount_avoids_scientific_notation_from_asyncpg_decimal():
+    """asyncpg can decode a scale-0 NUMERIC like 30000 as Decimal('3E+4'); the API must
+    still render it as a normal fixed-point amount."""
+    rule = make_rule(discount_type="percent", discount_value=Decimal(5), max_discount=Decimal("3E+4"))
+    amount = compute_discount_amount(rule, Decimal(1_150_000))
+    assert amount == Decimal("30000.00")
+    assert "E" not in str(amount)
+
+
 def test_worked_example_from_service_idea_doc():
     """docs/service-idea.md: 대한항공 공식 1,150,000 - 신규회원 50,000 - 현대카드 5%(최대 30,000) = 1,070,000"""
     new_member_rule = make_rule(

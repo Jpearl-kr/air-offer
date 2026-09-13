@@ -24,6 +24,12 @@ from app.services.route_lookup import get_or_create_route_id
 router = APIRouter(prefix="/comparisons", tags=["comparisons"])
 
 
+def _money(value: Decimal) -> Decimal:
+    """Normalizes to fixed-point cents. asyncpg can decode a scale-0 NUMERIC like
+    30000 as Decimal('3E+4'); quantizing prevents scientific notation in API output."""
+    return value.quantize(Decimal("0.01"))
+
+
 async def _applicable_rules(
     db: AsyncSession, provider_id: int, airline_code: str | None
 ) -> list[tuple[PromotionRule, str]]:
@@ -80,11 +86,12 @@ async def get_comparisons(
         if not provider_prices:
             continue
 
-        market_lowest = min(pp.base_price for pp in provider_prices)
+        market_lowest = min(_money(pp.base_price) for pp in provider_prices)
 
         offers: list[OfferOut] = []
         comparisons: list[PriceComparison] = []
         for provider_price in provider_prices:
+            base_price = _money(provider_price.base_price)
             provider = await db.get(Provider, provider_price.provider_id)
             rules = await _applicable_rules(db, provider_price.provider_id, flight_result.airline_code)
 
@@ -94,17 +101,17 @@ async def get_comparisons(
                 booking_date=date.today(),
                 travel_date=search.depart_date,
                 route_id=route_id,
-                amount_hint=provider_price.base_price,
+                amount_hint=base_price,
             )
-            applied = best_combination(rules, provider_price.base_price, ctx)
+            applied = best_combination(rules, base_price, ctx)
             discount_total: Decimal = sum((a.amount for a in applied), Decimal(0))
-            final_price = provider_price.base_price - discount_total
+            final_price = _money(base_price - discount_total)
 
             comparison = PriceComparison(
                 search_id=search_id,
                 flight_result_id=flight_result.id,
                 provider_id=provider_price.provider_id,
-                base_price=provider_price.base_price,
+                base_price=base_price,
                 applied_promotion_ids=[a.rule_id for a in applied],
                 final_price=final_price,
                 is_best=False,
@@ -116,7 +123,7 @@ async def get_comparisons(
             offers.append(
                 OfferOut(
                     provider=provider.name,
-                    base_price=provider_price.base_price,
+                    base_price=base_price,
                     final_price=final_price,
                     applied_promotions=[
                         AppliedPromotionOut(id=a.rule_id, title=a.promotion_title, discount=-a.amount)
@@ -140,7 +147,7 @@ async def get_comparisons(
                 arrive_at=flight_result.arrive_at,
                 offers=offers,
                 best_offer_provider=best_offer.provider,
-                savings_vs_market_lowest=market_lowest - best_offer.final_price,
+                savings_vs_market_lowest=_money(market_lowest - best_offer.final_price),
             )
         )
 
