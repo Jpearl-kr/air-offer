@@ -36,3 +36,4 @@ class ComparisonResponse(BaseModel):
     origin: str
     destination: str
     results: list[FlightResultOut]
+    triggered_alert_ids: list[int] = []

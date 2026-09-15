@@ -18,6 +18,7 @@ from app.models import (
     ProviderPrice,
 )
 from app.schemas.comparison import AppliedPromotionOut, ComparisonResponse, FlightResultOut, OfferOut
+from app.services.alert_checker import check_and_trigger_alerts
 from app.services.discount_rule_engine import UserContext, best_combination
 from app.services.route_lookup import get_or_create_route_id
 
@@ -72,6 +73,7 @@ async def get_comparisons(
     )
 
     results_out: list[FlightResultOut] = []
+    triggered_alert_ids: list[int] = []
 
     for flight_result in flight_results:
         provider_prices = (
@@ -151,6 +153,11 @@ async def get_comparisons(
             )
         )
 
+        triggered = await check_and_trigger_alerts(
+            db, search.origin, search.destination, search.depart_date, best_offer.final_price
+        )
+        triggered_alert_ids.extend(alert.id for alert in triggered)
+
     await db.commit()
 
     return ComparisonResponse(
@@ -158,4 +165,5 @@ async def get_comparisons(
         origin=search.origin,
         destination=search.destination,
         results=results_out,
+        triggered_alert_ids=triggered_alert_ids,
     )
